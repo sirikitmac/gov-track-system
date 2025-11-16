@@ -49,7 +49,7 @@ export default async function ManageBidsPage({
       bid_date,
       is_winning_bid,
       contractor_id,
-      contractors (
+      contractors!inner (
         id,
         company_name,
         contact_person,
@@ -59,6 +59,12 @@ export default async function ManageBidsPage({
     `)
     .eq('project_id', id)
     .order('bid_amount', { ascending: true });
+
+  // Transform the data to match the expected type
+  const transformedBids = bids?.map((bid: any) => ({
+    ...bid,
+    contractors: Array.isArray(bid.contractors) ? bid.contractors[0] : bid.contractors
+  })) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,7 +101,7 @@ export default async function ManageBidsPage({
             <p className="text-muted-foreground mt-2">{project.title}</p>
           </div>
 
-          <ManageBidsForm project={project} bids={bids || []} userId={user.id} />
+          <ManageBidsForm project={project} bids={transformedBids} userId={user.id} />
         </div>
       </main>
     </div>
