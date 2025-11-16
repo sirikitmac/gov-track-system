@@ -176,11 +176,11 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-muted mt-20">
+      {/* <footer className="border-t border-border bg-muted mt-20">
         <div className="container mx-auto px-4 py-8 text-center text-muted-foreground">
           <p>&copy; 2025 BuildTrack-LGU. Promoting transparency and good governance in local government projects.</p>
         </div>
-      </footer>
+      </footer> */}
     </div>
   );
 }
