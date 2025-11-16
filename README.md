@@ -2,7 +2,7 @@
 
 A comprehensive governance platform for managing the complete lifecycle of Local Government Unit (LGU) projects—from planning and budgeting to procurement, implementation, and public transparency.
 
-
+<img width="1856" height="939" alt="image" src="https://github.com/user-attachments/assets/c6958e02-ad8e-43c6-9cf2-fee53bea0985" />
 <img width="1860" height="942" alt="image" src="https://github.com/user-attachments/assets/b2eb772c-ff5c-4ab5-8120-0f69d45efd48" />
 <img width="1863" height="940" alt="image" src="https://github.com/user-attachments/assets/e3b2e121-9626-4311-acc1-e2790aba8e80" />
 
