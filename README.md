@@ -23,6 +23,12 @@ BuildTrack-LGU digitizes and streamlines the entire project management workflow 
 
 ---
 
+> **Admin Access:**
+> Email: `annieneshreend@gmail.com`
+> Pass: `annie04`
+
+---
+
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
