@@ -2,6 +2,20 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
+  // Check if there's an auth code in the URL that needs to be exchanged
+  // This handles Supabase email links (password reset, email verification, etc.)
+  const code = request.nextUrl.searchParams.get('code');
+  const isRootPath = request.nextUrl.pathname === '/';
+  
+  if (code && isRootPath) {
+    // Redirect to reset password page with the code
+    // The reset-password page will exchange the code for a session
+    const url = request.nextUrl.clone();
+    url.pathname = '/auth/reset-password';
+    // Keep the code parameter so the page can exchange it
+    return NextResponse.redirect(url);
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
