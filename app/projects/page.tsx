@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { DashboardLayout } from '@/components/dashboard-layout';
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, DollarSign, User, Search, TrendingUp, FolderOpen, CheckCircle2, Clock } from 'lucide-react';
+import { MapPin, DollarSign, User, Search, TrendingUp, FolderOpen, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import { useDebouncedValue } from '@/lib/hooks/use-debounce';
 
 /**
@@ -40,10 +40,19 @@ interface Project {
  * - Reduce Algorithm: Aggregation for statistics O(n)
  * - Memoization: Caches computed results to prevent redundant calculations
  * - Debouncing: Optimization technique reducing search operations by 80%
+ * - Infinite Scroll: Lazy loading pattern - O(k) per batch where k = ITEMS_PER_PAGE
+ * - Intersection Observer: Browser API for efficient scroll detection - O(1)
  * 
  * @returns {JSX.Element} The rendered projects page
  */
 export default function PublicProjectsPage() {
+  /**
+   * Number of projects to render per batch
+   * @description DSA: Chunking/Pagination - reduces initial render from O(n) to O(k)
+   * where k is a constant (12 items), making initial load time constant
+   */
+  const ITEMS_PER_PAGE = 12;
+
   /** @description Data Structure: Dynamic Array - stores project objects */
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +61,22 @@ export default function PublicProjectsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [userRole, setUserRole] = useState<string>();
   const [userEmail, setUserEmail] = useState<string>();
+  
+  /**
+   * Visible items count for lazy loading
+   * @description DSA: Windowing/Virtual Scroll concept
+   * Only renders visibleCount items, improving DOM performance
+   * Initial: O(k) instead of O(n) where k = ITEMS_PER_PAGE
+   */
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const [loadingMore, setLoadingMore] = useState(false);
+  
+  /**
+   * Reference to the sentinel element for intersection observer
+   * @description Used to detect when user scrolls near bottom
+   */
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  
   const supabase = createClient();
 
   /**
@@ -135,6 +160,97 @@ export default function PublicProjectsPage() {
       return matchesSearch && matchesCategory && matchesStatus;
     });
   }, [projects, debouncedSearchTerm, categoryFilter, statusFilter]);
+
+  /**
+   * Visible projects slice for lazy loading
+   * @description DSA: Array Slicing - O(k) where k = visibleCount
+   * Instead of rendering all n projects, only renders first k items
+   * As user scrolls, k increases incrementally
+   * 
+   * Performance Impact:
+   * - Initial render: O(k) instead of O(n) DOM nodes
+   * - Memory usage: Only k Card components in memory
+   * - Paint time: Reduced by (n-k)/n percent
+   * 
+   * @returns {Project[]} Subset of filtered projects currently visible
+   */
+  const visibleProjects = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount);
+  }, [filteredProjects, visibleCount]);
+
+  /**
+   * Check if there are more projects to load
+   * @description Simple boolean comparison - O(1)
+   */
+  const hasMore = visibleCount < filteredProjects.length;
+
+  /**
+   * Reset visible count when filters change
+   * @description Ensures fresh pagination when user changes search/filter criteria
+   * Without this, changing filters might show stale pagination state
+   */
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [debouncedSearchTerm, categoryFilter, statusFilter]);
+
+  /**
+   * Load more projects callback
+   * @description DSA: Incremental Loading / Chunking
+   * Increases visible count by ITEMS_PER_PAGE (constant)
+   * Time Complexity: O(1) for state update
+   * 
+   * Uses useCallback to maintain referential equality for Intersection Observer
+   */
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    
+    setLoadingMore(true);
+    // Small delay for smooth UX and to show loading indicator
+    setTimeout(() => {
+      setVisibleCount(prev => Math.min(prev + ITEMS_PER_PAGE, filteredProjects.length));
+      setLoadingMore(false);
+    }, 300);
+  }, [loadingMore, hasMore, filteredProjects.length]);
+
+  /**
+   * Intersection Observer for infinite scroll
+   * @description DSA: Event-driven lazy loading using browser API
+   * 
+   * How it works:
+   * 1. Observer watches a sentinel element at the bottom of the list
+   * 2. When sentinel enters viewport (isIntersecting = true), trigger loadMore
+   * 3. Uses rootMargin to trigger slightly before element is visible (preloading)
+   * 
+   * Time Complexity: O(1) - browser handles intersection detection efficiently
+   * Much more performant than scroll event listeners which fire on every scroll
+   */
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // entries[0] is our sentinel element
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadMore();
+        }
+      },
+      {
+        // Trigger when element is 100px from entering viewport (preload)
+        rootMargin: '100px',
+        threshold: 0.1,
+      }
+    );
+
+    const currentRef = loadMoreRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    // Cleanup observer on unmount or when dependencies change
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+    };
+  }, [hasMore, loadingMore, loadMore]);
 
   /**
    * Fetches project data from Supabase database
@@ -336,63 +452,97 @@ export default function PublicProjectsPage() {
       {/* Results Count */}
       <div className="mb-6">
         <p className="text-sm text-muted-foreground">
-          Showing {filteredProjects.length} of {projects.length} projects
+          Showing {visibleProjects.length} of {filteredProjects.length} projects
+          {filteredProjects.length !== projects.length && ` (${projects.length} total)`}
         </p>
       </div>
 
-        {/* Projects Grid */}
+        {/* Projects Grid with Lazy Loading */}
         {loading ? (
           <div className="text-center py-16">
-            <p className="text-muted-foreground">Loading projects...</p>
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+            <p className="text-muted-foreground mt-2">Loading projects...</p>
           </div>
         ) : filteredProjects.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-muted-foreground">No projects found matching your filters</p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProjects.map((project) => (
-              <Link key={project.id} href={`/projects/${project.id}`}>
-                <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
-                  <CardHeader>
-                    <div className="flex justify-between items-start gap-2 mb-2">
-                      <Badge className={getStatusColor(project.status)}>
-                        {project.status.replace(/_/g, ' ')}
-                      </Badge>
-                    </div>
-                    <CardTitle className="line-clamp-2">{project.title}</CardTitle>
-                    <CardDescription className="flex items-center gap-1 mt-2">
-                      <MapPin className="w-4 h-4" />
-                      {project.barangay}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+          <>
+            {/**
+             * Projects Grid
+             * @description DSA: Lazy Rendering - Only renders visibleProjects (subset)
+             * Instead of rendering all n cards, renders only k visible ones
+             * Performance: O(k) DOM operations instead of O(n)
+             */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {visibleProjects.map((project) => (
+                <Link key={project.id} href={`/projects/${project.id}`}>
+                  <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
+                    <CardHeader>
+                      <div className="flex justify-between items-start gap-2 mb-2">
+                        <Badge className={getStatusColor(project.status)}>
+                          {project.status.replace(/_/g, ' ')}
+                        </Badge>
+                      </div>
+                      <CardTitle className="line-clamp-2">{project.title}</CardTitle>
+                      <CardDescription className="flex items-center gap-1 mt-2">
+                        <MapPin className="w-4 h-4" />
+                        {project.barangay}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <DollarSign className="w-4 h-4 text-primary" />
-                        <span className="text-foreground font-semibold">
-                          PHP {(project.approved_budget_amount || project.estimated_cost).toLocaleString('en-PH')}
-                        </span>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <DollarSign className="w-4 h-4 text-primary" />
+                          <span className="text-foreground font-semibold">
+                            PHP {(project.approved_budget_amount || project.estimated_cost).toLocaleString('en-PH')}
+                          </span>
+                        </div>
+
+                        {project.contractors && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="w-4 h-4 text-primary" />
+                            <span className="text-muted-foreground">{project.contractors.company_name}</span>
+                          </div>
+                        )}
                       </div>
 
-                      {project.contractors && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <User className="w-4 h-4 text-primary" />
-                          <span className="text-muted-foreground">{project.contractors.company_name}</span>
-                        </div>
-                      )}
-                    </div>
+                      <Button variant="outline" className="w-full">
+                        View Details
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
 
-                    <Button variant="outline" className="w-full">
-                      View Details
-                    </Button>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+            {/**
+             * Lazy Load Sentinel & Loading Indicator
+             * @description DSA: Intersection Observer Pattern
+             * This invisible div acts as a "sentinel" - when it enters the viewport,
+             * the Intersection Observer triggers loadMore()
+             * 
+             * Benefits over scroll listeners:
+             * - O(1) detection vs O(n) scroll event calculations
+             * - Browser-optimized, runs off main thread
+             * - No scroll jank or performance degradation
+             */}
+            <div ref={loadMoreRef} className="py-8 flex justify-center">
+              {loadingMore ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Loading more projects...</span>
+                </div>
+              ) : hasMore ? (
+                <p className="text-sm text-muted-foreground">Scroll for more projects</p>
+              ) : filteredProjects.length > ITEMS_PER_PAGE ? (
+                <p className="text-sm text-muted-foreground">All {filteredProjects.length} projects loaded</p>
+              ) : null}
+            </div>
+          </>
         )}
 
 
