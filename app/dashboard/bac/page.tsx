@@ -235,52 +235,6 @@ export default async function BACDashboard() {
 
         {/* Key Metrics */}
         <div className="grid md:grid-cols-3 gap-4">
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Total Bid Invitations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{bidInvitations?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Published invitations</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Registered Contractors</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{contractors?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Active contractors</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Avg Bids per Project</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {(biddingCount + fundedCount) > 0 
-                  ? (totalBidsCount / (biddingCount + fundedCount)).toFixed(1)
-                  : '0'}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Competition level</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Contractor Participation */}
-        {contractorParticipation.length > 0 && (
-          <BarChart 
-            title="Top Contractor Participation"
-            description="Most active contractors by bid submissions"
-            data={contractorParticipation}
-          />
-        )}
-
-        {/* Key Metrics */}
-        <div className="grid md:grid-cols-3 gap-4">
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-none">
             <CardHeader>
               <CardTitle className="text-sm font-medium">Total Bid Invitations</CardTitle>
