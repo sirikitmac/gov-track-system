@@ -292,7 +292,7 @@ export default async function SystemSettings() {
               <AlertTriangle className="h-5 w-5 text-amber-600" />
               <CardTitle className="text-amber-900">Maintenance & Backup</CardTitle>
             </div>
-            <CardDescription>System maintenance and data backup tools</CardDescription>
+            <CardDescription className='dark:text-white!'>System maintenance and data backup tools</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-2 md:grid-cols-3">
