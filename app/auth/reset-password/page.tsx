@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -10,17 +10,24 @@ import { AlertCircle, Check, Eye, EyeOff, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /**
- * ResetPasswordPage - Handles password reset after email verification
- * 
- * @description This component:
- * - Validates the reset token from URL
- * - Allows user to set a new password
- * - Includes password strength validation
- * - Redirects to login on success
- * 
- * @returns {JSX.Element} The password reset form
+ * Loading fallback component for Suspense boundary
  */
-export default function ResetPasswordPage() {
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+      <Card className="w-full max-w-md">
+        <CardContent className="py-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <p className="text-muted-foreground mt-4">Loading...</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ResetPasswordContent() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -346,5 +353,21 @@ export default function ResetPasswordPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * ResetPasswordPage - Main export wrapped in Suspense boundary
+ * 
+ * @description This component wraps ResetPasswordContent in a Suspense boundary
+ * as required by Next.js 15 when using useSearchParams()
+ * 
+ * @returns {JSX.Element} The password reset page
+ */
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
