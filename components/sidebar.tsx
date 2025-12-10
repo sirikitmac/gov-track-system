@@ -1,5 +1,27 @@
 'use client';
 
+/**
+ * @fileoverview Sidebar navigation component with role-based access control
+ * 
+ * This component implements intelligent navigation that adapts based on user roles.
+ * Uses Hash Map (Object) data structure for O(1) role-based navigation lookup.
+ * 
+ * @description DSA Overview:
+ * 
+ * 1. **Hash Map (Object Lookup)**: Role-based navigation
+ *    - Time Complexity: O(1) for retrieving navigation items by role
+ *    - Space Complexity: O(r × n) where r = roles, n = nav items per role
+ *    - Why Hash Map: Instant access to role-specific navigation
+ * 
+ * 2. **Array Iteration**: Rendering navigation items
+ *    - Time Complexity: O(n) where n = number of nav items for the role
+ *    - Space Complexity: O(1) - no additional storage
+ * 
+ * 3. **String Manipulation**: Path matching
+ *    - Time Complexity: O(m) where m = path length
+ *    - Uses startsWith() for route matching
+ */
+
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -30,6 +52,15 @@ import {
   Bell
 } from 'lucide-react';
 
+/**
+ * Props interface for the Sidebar component
+ * 
+ * @interface SidebarProps
+ * @property {string} [userRole] - The current user's role (determines navigation items)
+ * @property {string} [userEmail] - The user's email for display
+ * @property {boolean} [isCollapsed] - External collapse state (optional)
+ * @property {Function} [setIsCollapsed] - External collapse state setter (optional)
+ */
 interface SidebarProps {
   userRole?: string;
   userEmail?: string;
@@ -37,6 +68,53 @@ interface SidebarProps {
   setIsCollapsed?: (collapsed: boolean) => void;
 }
 
+/**
+ * Sidebar navigation component with role-based access control
+ * 
+ * @component
+ * @description Displays navigation items based on user role using Hash Map lookup.
+ * 
+ * **DSA Implementations:**
+ * 
+ * 1. **getNavItems() - Hash Map Lookup**
+ *    - Data Structure: JavaScript Object (Hash Map)
+ *    - Time Complexity: O(1) to retrieve navigation items for a role
+ *    - How it works:
+ *      ```
+ *      roleBasedItems = {
+ *        'System_Administrator': [...nav items],
+ *        'Planner': [...nav items],
+ *        'Budget_Officer': [...nav items],
+ *        // etc.
+ *      }
+ *      return roleBasedItems[userRole] // O(1) lookup
+ *      ```
+ *    - Why O(1): JavaScript objects use hash tables internally
+ * 
+ * 2. **Navigation Rendering - Array Iteration**
+ *    - Time Complexity: O(n) where n = nav items for role
+ *    - Typically n ≤ 10, so effectively O(1) constant time
+ * 
+ * 3. **Route Matching - String Comparison**
+ *    - Uses pathname === href || pathname.startsWith(href + '/')
+ *    - Time Complexity: O(m) where m = path length
+ *    - Determines active state for highlighting
+ * 
+ * 4. **handleLogout() - Async Operation**
+ *    - Calls Supabase signOut (async)
+ *    - Redirects to login page
+ *    - Time Complexity: O(1) locally, network-dependent for API
+ * 
+ * @param {SidebarProps} props - Component props
+ * @returns {JSX.Element} Rendered sidebar with role-based navigation
+ * 
+ * @example
+ * // Usage:
+ * <Sidebar 
+ *   userRole="System_Administrator" 
+ *   userEmail="admin@example.com" 
+ * />
+ */
 export function Sidebar({ userRole, userEmail, isCollapsed: externalIsCollapsed, setIsCollapsed: externalSetIsCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -48,13 +126,58 @@ export function Sidebar({ userRole, userEmail, isCollapsed: externalIsCollapsed,
   const isCollapsed = externalIsCollapsed !== undefined ? externalIsCollapsed : internalIsCollapsed;
   const setIsCollapsed = externalSetIsCollapsed || setInternalIsCollapsed;
 
+  /**
+   * Handles user logout
+   * 
+   * @async
+   * @function handleLogout
+   * @description Signs out the user and redirects to login page
+   * 
+   * DSA: None (API call)
+   * Time Complexity: O(1) locally, network-dependent for Supabase API
+   * 
+   * @returns {Promise<void>}
+   */
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/auth/login');
   };
 
-  // Navigation items based on role - More comprehensive
+  /**
+   * Gets navigation items based on user role
+   * 
+   * @function getNavItems
+   * @description Retrieves role-specific navigation items using Hash Map lookup
+   * 
+   * DSA: Hash Map (JavaScript Object)
+   * Time Complexity: O(1) - Direct key access
+   * Space Complexity: O(r × n) where r = number of roles, n = average items per role
+   * 
+   * Why Hash Map:
+   * - O(1) lookup vs O(n) if we used if-else chains
+   * - Scalable: Adding new roles doesn't affect performance
+   * - Clean: Easy to maintain and extend
+   * 
+   * Alternative considered:
+   * - Switch statement: O(n) worst case for n roles
+   * - Array of roles with find(): O(n) 
+   * - Hash Map: O(1) ✓ (selected)
+   * 
+   * @returns {Array<{href: string, label: string, icon: any, description?: string}>}
+   *   Array of navigation items for the user's role
+   */
   const getNavItems = () => {
+    /**
+     * Role-based navigation mapping
+     * 
+     * @description Data Structure: Hash Map (Object)
+     * - Keys: Role strings (e.g., 'System_Administrator', 'Planner')
+     * - Values: Arrays of navigation item objects
+     * 
+     * Access Pattern:
+     * - roleBasedItems['System_Administrator'] → O(1) lookup
+     * - Returns array of nav items for that role
+     */
     const roleBasedItems: Record<string, Array<{ 
       href: string; 
       label: string; 
@@ -113,13 +236,32 @@ export function Sidebar({ userRole, userEmail, isCollapsed: externalIsCollapsed,
       ],
     };
 
+    /**
+     * O(1) Hash Map lookup
+     * Falls back to Public_User navigation if role not found
+     */
     return roleBasedItems[userRole || 'Public_User'] || [
       { href: '/projects', label: 'Public Projects', icon: Eye },
     ];
   };
 
+  /**
+   * Cached navigation items for the current user role
+   * @description Result of getNavItems() - O(1) lookup
+   */
   const navItems = getNavItems();
   
+  /**
+   * Formats role string for display
+   * 
+   * @function getRoleDisplayName
+   * @description Converts role identifiers to human-readable format
+   * 
+   * DSA: String manipulation
+   * Time Complexity: O(m) where m = role string length
+   * 
+   * @returns {string} Formatted role name
+   */
   const getRoleDisplayName = () => {
     if (!userRole) return 'Guest';
     return userRole.replace(/_/g, ' ');

@@ -1,5 +1,23 @@
 'use client';
 
+/**
+ * @fileoverview Milestone Manager Component for Project Inspection
+ * 
+ * This component manages project milestones, allowing inspectors to add and view milestones.
+ * Implements array operations and switch-based lookups.
+ * 
+ * @description DSA Overview:
+ * 
+ * 1. **Array Length**: For calculating next sequence number
+ *    - Time Complexity: O(1) - length is stored property
+ * 
+ * 2. **Switch Statement**: For status color lookup
+ *    - Time Complexity: O(1) average (jump table optimization)
+ * 
+ * 3. **Array Map**: For rendering milestone list
+ *    - Time Complexity: O(n) where n = number of milestones
+ */
+
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,6 +30,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+/**
+ * Milestone interface for type safety
+ * 
+ * @interface Milestone
+ * @description Represents a project milestone with progress tracking
+ */
 interface Milestone {
   id: string;
   title: string;
@@ -23,6 +47,47 @@ interface Milestone {
   order_sequence: number;
 }
 
+/**
+ * Milestone Manager Component
+ * 
+ * @component
+ * @param {Object} props - Component props
+ * @param {string} props.projectId - The ID of the project
+ * @param {Milestone[]} props.milestones - Array of existing milestones
+ * @param {string} props.userId - The ID of the inspector
+ * 
+ * @description Manages project milestones with add functionality and list display.
+ * 
+ * **DSA Implementations:**
+ * 
+ * 1. **nextSequence Calculation**
+ *    - Uses array.length property
+ *    - Time Complexity: O(1) - length is O(1) access
+ *    - Code: `(initialMilestones?.length || 0) + 1`
+ * 
+ * 2. **getStatusColor() - Switch Statement**
+ *    - Algorithm: Switch case matching
+ *    - Time Complexity: O(1) - compiler optimizes to jump table
+ *    - Maps status string to CSS color classes
+ * 
+ * 3. **Milestone List Rendering - Array Map**
+ *    - Algorithm: Linear iteration
+ *    - Time Complexity: O(n) where n = number of milestones
+ *    - Renders each milestone as a Card component
+ * 
+ * 4. **handleAddMilestone() - Database Insert**
+ *    - Time Complexity: O(1) locally, database-dependent
+ *    - Inserts new milestone record
+ * 
+ * @returns {JSX.Element} Rendered milestone manager
+ * 
+ * @example
+ * <MilestoneManager 
+ *   projectId="project-uuid" 
+ *   milestones={existingMilestones} 
+ *   userId="user-uuid" 
+ * />
+ */
 export function MilestoneManager({
   projectId,
   milestones: initialMilestones,
@@ -32,31 +97,75 @@ export function MilestoneManager({
   milestones: Milestone[];
   userId: string;
 }) {
+  /**
+   * Form visibility state
+   */
   const [showForm, setShowForm] = useState(false);
+  
+  /**
+   * Form field states - O(1) per update
+   */
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [percentage, setPercentage] = useState('0');
+  
+  /**
+   * UI state variables
+   */
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
+  /**
+   * Handles adding a new milestone
+   * 
+   * @async
+   * @function handleAddMilestone
+   * @param {React.FormEvent} e - Form event
+   * 
+   * @description DSA: Sequence Calculation + Database Insert
+   * 
+   * Time Complexity:
+   * - Array length access: O(1)
+   * - parseInt: O(n) where n = string length (~3 chars max)
+   * - Database INSERT: Network-dependent
+   * 
+   * Process:
+   * 1. Calculate next sequence: O(1)
+   *    - Uses array.length property (stored value)
+   *    - nextSequence = length + 1
+   * 
+   * 2. Create milestone object: O(1)
+   * 
+   * 3. Insert to database: Network-dependent
+   */
   async function handleAddMilestone(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
+      /**
+       * Calculate next sequence number
+       * @description DSA: Array length property access
+       * Time Complexity: O(1) - length is stored, not calculated
+       */
       const nextSequence = (initialMilestones?.length || 0) + 1;
       
+      /**
+       * Database INSERT operation
+       * @description Inserts new milestone record
+       * Time Complexity: O(1) locally
+       */
       const { error: insertError } = await supabase
         .from('milestones')
         .insert({
           project_id: projectId,
           title,
           description: description || null,
-          percentage_complete: parseInt(percentage),
+          percentage_complete: parseInt(percentage), // O(n) where n ≈ 3 chars
           status: 'Not_Started',
           scheduled_start_date: startDate || null,
           scheduled_end_date: endDate || null,
@@ -66,6 +175,7 @@ export function MilestoneManager({
       if (insertError) {
         setError(insertError.message);
       } else {
+        // Reset form fields - O(1) per field
         setTitle('');
         setDescription('');
         setStartDate('');
@@ -82,6 +192,24 @@ export function MilestoneManager({
     }
   }
 
+  /**
+   * Gets CSS color classes for milestone status
+   * 
+   * @function getStatusColor
+   * @param {string} status - The milestone status
+   * @returns {string} CSS class string for the status badge
+   * 
+   * @description DSA: Switch Statement (Optimized Lookup)
+   * 
+   * Time Complexity: O(1)
+   * - Compiler typically optimizes switch to jump table
+   * - Direct jump to matching case
+   * 
+   * Alternative considered:
+   * - Object lookup (Hash Map): Also O(1), slightly more memory
+   * - If-else chain: O(n) worst case
+   * - Switch: O(1) with jump table optimization ✓
+   */
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Not_Started':

@@ -1,9 +1,75 @@
+/**
+ * @fileoverview Admin Dashboard Page with comprehensive system statistics
+ * 
+ * This server component displays system-wide statistics, user distribution,
+ * budget summaries, and recent projects for system administrators.
+ * 
+ * @description DSA Overview:
+ * 
+ * 1. **Reduce Algorithm**: For computing budget totals
+ *    - Time Complexity: O(n) where n = number of projects
+ * 
+ * 2. **Reduce with Grouping**: For role distribution counting
+ *    - Time Complexity: O(n) where n = number of users
+ * 
+ * 3. **Object.entries + Map**: For rendering role statistics
+ *    - Time Complexity: O(k) where k = number of unique roles
+ */
+
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, FolderKanban, Activity, Shield, TrendingUp, DollarSign, CheckCircle2, Clock } from 'lucide-react';
 
+/**
+ * Admin Dashboard Page Component
+ * 
+ * @async
+ * @function AdminDashboard
+ * @description Server component displaying comprehensive system statistics.
+ * 
+ * **DSA Implementations:**
+ * 
+ * 1. **Database Queries with Count**
+ *    - Uses Supabase count: 'exact' for O(1) count queries
+ *    - Much faster than fetching all records and counting
+ * 
+ * 2. **totalBudgetRequested - Array Reduce (Sum)**
+ *    - Algorithm: Linear aggregation
+ *    - Time Complexity: O(n) where n = all projects
+ *    - Code: `projects.reduce((sum, p) => sum + (p.estimated_cost || 0), 0)`
+ *    - Sums all estimated costs in single pass
+ * 
+ * 3. **totalBudgetAllocated - Array Reduce (Sum)**
+ *    - Algorithm: Linear aggregation
+ *    - Time Complexity: O(n)
+ *    - Sums all approved budget amounts
+ * 
+ * 4. **totalDisbursed - Array Reduce (Sum)**
+ *    - Algorithm: Linear aggregation
+ *    - Time Complexity: O(n)
+ *    - Sums all disbursed amounts
+ * 
+ * 5. **roleCounts - Reduce with Object Accumulator (Grouping)**
+ *    - Algorithm: Linear grouping/counting
+ *    - Time Complexity: O(n) where n = users with roles
+ *    - Space Complexity: O(k) where k = unique roles
+ *    - Code: `users.reduce((acc, { role }) => { acc[role]++; return acc }, {})`
+ *    - Groups users by role and counts each
+ * 
+ * 6. **Object.entries() + Map - Role Rendering**
+ *    - Algorithm: Object to array conversion + iteration
+ *    - Time Complexity: O(k) where k = unique roles
+ *    - Converts role counts object to renderable array
+ * 
+ * **Query Optimization:**
+ * - Uses `count: 'exact', head: true` for count-only queries
+ * - Fetches only needed fields: `select('estimated_cost, approved_budget_amount...')`
+ * - Limits recent projects to 5: `.limit(5)`
+ * 
+ * @returns {Promise<JSX.Element>} Rendered admin dashboard
+ */
 export default async function AdminDashboard() {
   const supabase = await createClient();
 
@@ -25,7 +91,11 @@ export default async function AdminDashboard() {
     redirect('/dashboard');
   }
 
-  // Get comprehensive statistics
+  /**
+   * Database COUNT queries
+   * @description Using count: 'exact' is O(1) in PostgreSQL with proper indexes
+   * Much more efficient than SELECT * then counting in JavaScript
+   */
   const { count: totalUsers } = await supabase
     .from('users')
     .select('*', { count: 'exact', head: true });
@@ -49,28 +119,86 @@ export default async function AdminDashboard() {
     .select('*', { count: 'exact', head: true })
     .in('status', ['Pending_Review', 'Prioritized']);
 
-  // Get recent projects with full data
+  /**
+   * Recent projects query with join
+   * @description Uses foreign key join for creator info
+   * Limited to 5 for O(1) rendering complexity
+   */
   const { data: recentProjects } = await supabase
     .from('projects')
     .select('*, users!created_by(first_name, last_name, role)')
     .order('created_at', { ascending: false })
     .limit(5);
 
-  // Calculate budget stats
+  /**
+   * Budget statistics query
+   * @description Fetches only needed columns for efficiency
+   * Selected fields minimize data transfer
+   */
   const { data: allProjects } = await supabase
     .from('projects')
     .select('estimated_cost, approved_budget_amount, amount_disbursed, status');
 
+  /**
+   * Total budget requested calculation
+   * 
+   * @description DSA: Array Reduce (Summation)
+   * 
+   * Algorithm: Linear aggregation
+   * Time Complexity: O(n) where n = all projects
+   * Space Complexity: O(1) - single accumulator
+   * 
+   * How it works:
+   * 1. Initialize sum = 0
+   * 2. For each project: sum += estimated_cost (or 0 if null)
+   * 3. Return final sum
+   */
   const totalBudgetRequested = allProjects?.reduce((sum, p) => sum + (p.estimated_cost || 0), 0) || 0;
+  
+  /**
+   * Total budget allocated
+   * @description DSA: Array Reduce - O(n)
+   */
   const totalBudgetAllocated = allProjects?.reduce((sum, p) => sum + (p.approved_budget_amount || 0), 0) || 0;
+  
+  /**
+   * Total funds disbursed
+   * @description DSA: Array Reduce - O(n)
+   */
   const totalDisbursed = allProjects?.reduce((sum, p) => sum + (p.amount_disbursed || 0), 0) || 0;
 
-  // Role distribution
+  /**
+   * Role distribution query
+   * @description Fetches only role column for efficiency
+   */
   const { data: roleDistribution } = await supabase
     .from('users')
     .select('role')
     .neq('role', 'Public_User');
 
+  /**
+   * Role counts calculation
+   * 
+   * @description DSA: Reduce with Object Accumulator (Grouping/Counting)
+   * 
+   * Algorithm: Linear grouping with counting
+   * Time Complexity: O(n) where n = users with roles
+   * Space Complexity: O(k) where k = unique roles (typically 6-8)
+   * 
+   * How it works:
+   * 1. Start with empty object {}
+   * 2. For each user:
+   *    a. Get role from destructuring
+   *    b. If role exists in acc: increment count
+   *    c. If role doesn't exist: initialize to 1
+   * 3. Return object: { 'Planner': 3, 'Budget_Officer': 2, ... }
+   * 
+   * Example:
+   * Input: [{ role: 'A' }, { role: 'B' }, { role: 'A' }]
+   * Step 1: {} → { A: 1 }
+   * Step 2: { A: 1 } → { A: 1, B: 1 }
+   * Step 3: { A: 1, B: 1 } → { A: 2, B: 1 }
+   */
   const roleCounts = roleDistribution?.reduce((acc: Record<string, number>, { role }) => {
     acc[role] = (acc[role] || 0) + 1;
     return acc;

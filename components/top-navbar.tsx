@@ -1,15 +1,80 @@
 "use client";
 
+/**
+ * @fileoverview Top navigation bar component with notifications and theme toggle
+ * 
+ * This component handles the top navigation including notifications dropdown,
+ * theme switching, and account menu.
+ * 
+ * @description DSA Overview:
+ * 
+ * 1. **Array Filter**: Counting unread notifications
+ *    - Time Complexity: O(n) where n = number of notifications
+ *    - Space Complexity: O(k) where k = unread count (for filter result)
+ * 
+ * 2. **Array Map**: Transforming notification states
+ *    - Time Complexity: O(n) where n = number of notifications
+ *    - Space Complexity: O(n) for new array
+ * 
+ * 3. **Array Iteration**: Rendering notification list
+ *    - Time Complexity: O(n) where n = notifications
+ */
+
 import { Bell, Moon, Sun, User, LogOut, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+/**
+ * Top navigation bar component
+ * 
+ * @component
+ * @description Displays system header with notifications, theme toggle, and account menu.
+ * 
+ * **DSA Implementations:**
+ * 
+ * 1. **unreadCount - Array Filter**
+ *    - Algorithm: Linear search with filter
+ *    - Time Complexity: O(n) where n = total notifications
+ *    - Code: `notifications.filter(n => n.unread).length`
+ *    - How it works:
+ *      - Iterates through all notifications
+ *      - Returns count of items where unread === true
+ * 
+ * 2. **markAllAsRead() - Array Map**
+ *    - Algorithm: Linear transformation
+ *    - Time Complexity: O(n) where n = total notifications
+ *    - Space Complexity: O(n) for new array (immutable update)
+ *    - Code: `notifications.map(n => ({ ...n, unread: false }))`
+ *    - How it works:
+ *      - Creates new array with all notifications marked as read
+ *      - Uses spread operator for immutability (React best practice)
+ * 
+ * 3. **Notification Rendering - Array Iteration**
+ *    - Algorithm: Linear iteration with map
+ *    - Time Complexity: O(n) for rendering
+ *    - Renders each notification as a list item
+ * 
+ * @returns {JSX.Element | null} Rendered navbar or null if not mounted
+ * 
+ * @example
+ * // Usage in layout:
+ * <TopNavbar />
+ */
 export function TopNavbar() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  
+  /**
+   * Notifications state array
+   * 
+   * @description Data Structure: Array of notification objects
+   * - Each object has: id, title, time, unread (boolean)
+   * - Array allows O(n) iteration for filtering/mapping
+   * - Object properties allow O(1) access to individual fields
+   */
   const [notifications, setNotifications] = useState([
     { id: 1, title: "New project proposal submitted", time: "5 min ago", unread: true },
     { id: 2, title: "Budget allocation approved", time: "1 hour ago", unread: true },
@@ -17,12 +82,65 @@ export function TopNavbar() {
     { id: 4, title: "New bid submission", time: "3 hours ago", unread: false },
   ]);
 
+  /**
+   * Count of unread notifications
+   * 
+   * @description DSA: Array Filter (Linear Search)
+   * 
+   * Algorithm: Filter then count
+   * Time Complexity: O(n) where n = total notifications
+   * Space Complexity: O(k) where k = number of unread items
+   * 
+   * How it works:
+   * 1. filter() iterates through all notifications - O(n)
+   * 2. For each item, checks if n.unread === true - O(1)
+   * 3. Returns new array of matching items
+   * 4. .length returns count - O(1)
+   * 
+   * Total: O(n) + O(1) = O(n)
+   * 
+   * Alternative considered:
+   * - Manual loop with counter: Same O(n) but less readable
+   * - Reduce: Same O(n), more complex for simple counting
+   * 
+   * @type {number}
+   */
   const unreadCount = notifications.filter(n => n.unread).length;
 
+  /**
+   * Effect hook for hydration safety
+   * 
+   * @description Ensures component only renders on client
+   * DSA: None (lifecycle management)
+   * Time Complexity: O(1)
+   */
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  /**
+   * Marks all notifications as read
+   * 
+   * @function markAllAsRead
+   * @description Transforms all notification objects to set unread = false
+   * 
+   * DSA: Array Map (Linear Transformation)
+   * Time Complexity: O(n) where n = number of notifications
+   * Space Complexity: O(n) - creates new array (immutable update)
+   * 
+   * How it works:
+   * 1. map() iterates through all notifications - O(n)
+   * 2. For each notification, creates new object with spread - O(1)
+   * 3. Overwrites unread property with false - O(1)
+   * 4. Returns new array with all items transformed
+   * 
+   * Why immutable update:
+   * - React requires new reference to detect state changes
+   * - Spread operator ({ ...n, unread: false }) creates shallow copy
+   * - Triggers re-render with updated state
+   * 
+   * @returns {void}
+   */
   const markAllAsRead = () => {
     setNotifications(notifications.map(n => ({ ...n, unread: false })));
   };

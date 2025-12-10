@@ -1,5 +1,24 @@
 'use client';
 
+/**
+ * @fileoverview Budget Allocation Form Component
+ * 
+ * This component handles budget allocation for prioritized projects.
+ * Implements database UPDATE and INSERT operations for project funding.
+ * 
+ * @description DSA Overview:
+ * 
+ * 1. **State Management**: React useState hooks
+ *    - Time Complexity: O(1) for each state update
+ * 
+ * 2. **Database Operations**: UPDATE project + INSERT history
+ *    - Two sequential database operations
+ *    - Time Complexity: O(1) locally, database-dependent
+ * 
+ * 3. **Input Validation**: Simple conditionals
+ *    - Time Complexity: O(1)
+ */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -11,6 +30,12 @@ import { AlertCircle, Check } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 
+/**
+ * Project interface for type safety
+ * 
+ * @interface Project
+ * @description Data structure representing a project for budget allocation
+ */
 interface Project {
   id: string;
   title: string;
@@ -21,15 +46,120 @@ interface Project {
   status: string;
 }
 
+/**
+ * Budget Allocation Form Component
+ * 
+ * @component
+ * @param {Object} props - Component props
+ * @param {Project} props.project - The project to allocate budget for
+ * @param {string} props.userId - The ID of the user performing the allocation
+ * 
+ * @description Handles budget allocation with validation and history logging.
+ * 
+ * **DSA Implementations:**
+ * 
+ * 1. **State Variables - React useState**
+ *    - Data Structure: Individual state atoms
+ *    - Time Complexity: O(1) for get/set operations
+ *    - States: approvedBudget, fundSourceCode, error, success, loading
+ * 
+ * 2. **handleSubmit() - Form Submission with Validation**
+ *    - Algorithm: Sequential validation + database operations
+ *    - Time Complexity: O(1) locally, network-dependent for API
+ *    - Steps:
+ *      a. Validate fund source code (string trim check)
+ *      b. Validate budget amount (> 0)
+ *      c. UPDATE project record
+ *      d. INSERT history record (audit trail)
+ *      e. Handle response
+ * 
+ * 3. **Input Validation - Conditional Checks**
+ *    - Time Complexity: O(1) each
+ *    - Checks: empty string, number > 0
+ * 
+ * **Data Flow:**
+ * ```
+ * User Input → State Update (O(1))
+ *       ↓
+ * Form Submit → Validation (O(1))
+ *       ↓
+ * UPDATE projects (set budget, status)
+ *       ↓
+ * INSERT project_history (audit log)
+ *       ↓
+ * Success → Redirect
+ * ```
+ * 
+ * **Database Operations:**
+ * 1. UPDATE projects SET approved_budget_amount, fund_source_code, status WHERE id
+ * 2. INSERT INTO project_history (audit record)
+ * 
+ * @returns {JSX.Element} Rendered budget allocation form
+ * 
+ * @example
+ * // Usage:
+ * <BudgetAllocationForm 
+ *   project={projectData} 
+ *   userId="user-uuid-123" 
+ * />
+ */
 export function BudgetAllocationForm({ project, userId }: { project: Project; userId: string }) {
+  /**
+   * Approved budget amount state
+   * @description Initialized with existing budget or estimated cost
+   * Uses toString() for input binding - O(1)
+   */
   const [approvedBudget, setApprovedBudget] = useState(project.approved_budget_amount?.toString() || project.estimated_cost.toString());
+  
+  /**
+   * Fund source code state
+   * @description Unique identifier for budget allocation
+   */
   const [fundSourceCode, setFundSourceCode] = useState(project.fund_source_code || '');
+  
+  /**
+   * UI state variables
+   */
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  
   const router = useRouter();
   const supabase = createClient();
 
+  /**
+   * Handles budget allocation form submission
+   * 
+   * @async
+   * @function handleSubmit
+   * @param {React.FormEvent} e - Form event
+   * 
+   * @description DSA: Sequential Validation + Database Operations
+   * 
+   * Time Complexity:
+   * - Validation: O(1) string checks
+   * - parseFloat: O(n) where n = string length (~10 chars)
+   * - Database UPDATE: Network-dependent
+   * - Database INSERT: Network-dependent
+   * 
+   * Process Flow:
+   * 1. **Validation Phase** (O(1)):
+   *    - Check fundSourceCode is not empty (trim + boolean)
+   *    - Check budgetAmount > 0
+   * 
+   * 2. **Database UPDATE** (network):
+   *    - Updates: approved_budget_amount, fund_source_code, status
+   *    - Filter: WHERE id = project.id
+   * 
+   * 3. **History INSERT** (network):
+   *    - Logs: project_id, changed_by, action_type, old_status, new_status
+   *    - change_details: JSON object with budget info
+   * 
+   * Why two operations:
+   * - UPDATE: Changes project state
+   * - INSERT: Creates audit trail for accountability
+   * - Both needed for proper financial tracking
+   */
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -37,12 +167,21 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
     setLoading(true);
 
     try {
+      /**
+       * Validation: Fund source code required
+       * @description O(1) string check using trim()
+       */
       if (!fundSourceCode.trim()) {
         setError('Fund source code is required');
         setLoading(false);
         return;
       }
 
+      /**
+       * Parse and validate budget amount
+       * @description parseFloat: O(n) where n = string length
+       * Validation: Simple comparison O(1)
+       */
       const budgetAmount = parseFloat(approvedBudget);
       if (budgetAmount <= 0) {
         setError('Budget amount must be greater than 0');
@@ -50,6 +189,12 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
         return;
       }
 
+      /**
+       * Database UPDATE operation
+       * @description Updates project with budget allocation
+       * - Sets approved_budget_amount, fund_source_code, status
+       * - Time Complexity: O(1) locally, database O(log n) for index lookup
+       */
       const { error } = await supabase
         .from('projects')
         .update({
@@ -62,7 +207,12 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
       if (error) {
         setError(error.message);
       } else {
-        // Log action to history
+        /**
+         * Database INSERT for audit history
+         * @description Creates audit trail record
+         * - Logs who made the change, when, and what changed
+         * - Time Complexity: O(1) insert operation
+         */
         await supabase.from('project_history').insert({
           project_id: project.id,
           changed_by: userId,
