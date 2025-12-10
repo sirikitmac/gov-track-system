@@ -42,6 +42,7 @@ interface Project {
   barangay: string;
   estimated_cost: number;
   approved_budget_amount?: number;
+  amount_disbursed?: number;
   fund_source_code?: string;
   status: string;
 }
@@ -101,9 +102,10 @@ interface Project {
  * <BudgetAllocationForm 
  *   project={projectData} 
  *   userId="user-uuid-123" 
+ *   isUpdate={false}
  * />
  */
-export function BudgetAllocationForm({ project, userId }: { project: Project; userId: string }) {
+export function BudgetAllocationForm({ project, userId, isUpdate = false }: { project: Project; userId: string; isUpdate?: boolean }) {
   /**
    * Approved budget amount state
    * @description Initialized with existing budget or estimated cost
@@ -116,6 +118,12 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
    * @description Unique identifier for budget allocation
    */
   const [fundSourceCode, setFundSourceCode] = useState(project.fund_source_code || '');
+
+  /**
+   * Amount disbursed state
+   * @description Tracks how much of the budget has been released/spent
+   */
+  const [amountDisbursed, setAmountDisbursed] = useState(project.amount_disbursed?.toString() || '0');
   
   /**
    * UI state variables
@@ -190,18 +198,40 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
       }
 
       /**
+       * Parse and validate disbursed amount
+       */
+      const disbursedAmount = parseFloat(amountDisbursed) || 0;
+      if (disbursedAmount < 0) {
+        setError('Disbursed amount cannot be negative');
+        setLoading(false);
+        return;
+      }
+      if (disbursedAmount > budgetAmount) {
+        setError('Disbursed amount cannot exceed the approved budget');
+        setLoading(false);
+        return;
+      }
+
+      /**
        * Database UPDATE operation
        * @description Updates project with budget allocation
-       * - Sets approved_budget_amount, fund_source_code, status
+       * - Sets approved_budget_amount, fund_source_code, amount_disbursed, status
        * - Time Complexity: O(1) locally, database O(log n) for index lookup
        */
+      const updateData: Record<string, any> = {
+        approved_budget_amount: budgetAmount,
+        fund_source_code: fundSourceCode,
+        amount_disbursed: disbursedAmount,
+      };
+
+      // Only change status to Funded if this is initial allocation (not an update)
+      if (!isUpdate) {
+        updateData.status = 'Funded';
+      }
+
       const { error } = await supabase
         .from('projects')
-        .update({
-          approved_budget_amount: budgetAmount,
-          fund_source_code: fundSourceCode,
-          status: 'Funded',
-        })
+        .update(updateData)
         .eq('id', project.id);
 
       if (error) {
@@ -216,12 +246,15 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
         await supabase.from('project_history').insert({
           project_id: project.id,
           changed_by: userId,
-          action_type: 'Budget_Allocated',
+          action_type: isUpdate ? 'Budget_Updated' : 'Budget_Allocated',
           old_status: project.status,
-          new_status: 'Funded',
+          new_status: isUpdate ? project.status : 'Funded',
           change_details: {
             approved_budget_amount: budgetAmount,
             fund_source_code: fundSourceCode,
+            amount_disbursed: disbursedAmount,
+            previous_budget: project.approved_budget_amount,
+            previous_disbursed: project.amount_disbursed,
           },
         });
 
@@ -271,7 +304,7 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
             <Alert className="border-green-200 bg-green-50">
               <Check className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
-                Budget allocated successfully! Redirecting...
+                {isUpdate ? 'Budget updated successfully!' : 'Budget allocated successfully!'} Redirecting...
               </AlertDescription>
             </Alert>
           )}
@@ -289,7 +322,7 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
               required
             />
             <p className="text-xs text-muted-foreground mt-2">
-              Recommended: PHP {project.estimated_cost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              {isUpdate ? 'Current' : 'Recommended'}: PHP {(project.approved_budget_amount || project.estimated_cost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
             </p>
           </div>
 
@@ -308,13 +341,39 @@ export function BudgetAllocationForm({ project, userId }: { project: Project; us
             </p>
           </div>
 
+          {isUpdate && (
+            <div>
+              <Label htmlFor="disbursed" className="text-foreground">Amount Disbursed (PHP)</Label>
+              <Input
+                id="disbursed"
+                type="number"
+                placeholder="0.00"
+                value={amountDisbursed}
+                onChange={(e) => setAmountDisbursed(e.target.value)}
+                step="0.01"
+                min="0"
+                max={approvedBudget}
+              />
+              <div className="flex justify-between items-center mt-2">
+                <p className="text-xs text-muted-foreground">
+                  Track the amount already released for this project
+                </p>
+                {parseFloat(approvedBudget) > 0 && (
+                  <p className="text-xs font-medium text-primary">
+                    {((parseFloat(amountDisbursed) || 0) / parseFloat(approvedBudget) * 100).toFixed(1)}% disbursed
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-4 pt-6 border-t border-border">
             <Button
               type="submit"
               disabled={loading || success}
               className="flex-1"
             >
-              {loading ? 'Allocating...' : 'Allocate Budget & Fund Project'}
+              {loading ? (isUpdate ? 'Updating...' : 'Allocating...') : (isUpdate ? 'Update Budget' : 'Allocate Budget & Fund Project')}
             </Button>
             <Button
               type="button"

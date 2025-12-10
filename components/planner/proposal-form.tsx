@@ -136,6 +136,23 @@ export function ProposalForm({ userId }: { userId: string }) {
 
     try {
       /**
+       * Validate estimated cost
+       * @description Prevents numeric overflow in database
+       * Max value: 999,999,999,999.99 (under 1 trillion PHP)
+       */
+      const costValue = parseFloat(estimatedCost);
+      if (isNaN(costValue) || costValue <= 0) {
+        setError('Please enter a valid estimated cost greater than 0');
+        setLoading(false);
+        return;
+      }
+      if (costValue > 999999999999.99) {
+        setError('Estimated cost cannot exceed ₱999,999,999,999.99 (under 1 trillion)');
+        setLoading(false);
+        return;
+      }
+
+      /**
        * Database INSERT operation
        * @description Inserts new project record
        * - Time Complexity: O(1) locally, database-dependent
@@ -146,7 +163,7 @@ export function ProposalForm({ userId }: { userId: string }) {
         description,
         barangay,
         project_category: category,
-        estimated_cost: parseFloat(estimatedCost), // O(n) string parsing
+        estimated_cost: costValue,
         problem_description: problemDescription,
         proposed_solution: proposedSolution,
         created_by: userId,
@@ -247,13 +264,17 @@ export function ProposalForm({ userId }: { userId: string }) {
                 <Input
                   id="estimatedCost"
                   type="number"
-                  placeholder="0.00"
+                  placeholder="e.g., 5000000"
                   value={estimatedCost}
                   onChange={(e) => setEstimatedCost(e.target.value)}
                   step="0.01"
-                  min="0"
+                  min="1"
+                  max="999999999999.99"
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum: ₱999,999,999,999.99 (e.g., enter 5000000 for ₱5 million)
+                </p>
               </div>
             </div>
           </div>
