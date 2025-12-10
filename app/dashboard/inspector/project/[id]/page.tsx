@@ -27,7 +27,8 @@ export default async function ProjectMonitoringPage({
     .eq('id', user.id)
     .single();
 
-  if (userProfile?.role !== 'Technical_Inspector') {
+  // Allow Technical Inspector and System Administrators
+  if (userProfile?.role !== 'Technical_Inspector' && userProfile?.role !== 'System_Administrator') {
     redirect('/dashboard');
   }
 

@@ -27,7 +27,8 @@ export default async function CreateInvitationPage({
     .eq('id', user.id)
     .single();
 
-  if (userProfile?.role !== 'BAC_Secretariat') {
+  // Allow BAC Secretariat and System Administrators
+  if (userProfile?.role !== 'BAC_Secretariat' && userProfile?.role !== 'System_Administrator') {
     redirect('/dashboard');
   }
 

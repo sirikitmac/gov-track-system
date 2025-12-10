@@ -27,7 +27,8 @@ export default async function ReviewProposalPage({
     .eq('id', user.id)
     .single();
 
-  if (userProfile?.role !== 'Development_Council') {
+  // Allow Development Council and System Administrators
+  if (userProfile?.role !== 'Development_Council' && userProfile?.role !== 'System_Administrator') {
     redirect('/dashboard');
   }
 

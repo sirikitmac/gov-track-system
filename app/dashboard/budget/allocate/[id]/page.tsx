@@ -39,9 +39,14 @@ export default async function AllocateBudgetPage({
     .eq('id', id)
     .single();
 
-  if (!project || project.status !== 'Prioritized') {
+  // Allow Prioritized (for initial allocation) and Funded/Open_For_Bidding/In_Progress (for updates)
+  const allowedStatuses = ['Prioritized', 'Funded', 'Open_For_Bidding', 'In_Progress'];
+  if (!project || !allowedStatuses.includes(project.status)) {
     redirect('/dashboard/budget');
   }
+
+  // Determine if this is an update or initial allocation
+  const isUpdate = project.status !== 'Prioritized';
 
   return (
     <DashboardLayout userRole={userProfile?.role} userEmail={user.email}>
@@ -54,11 +59,11 @@ export default async function AllocateBudgetPage({
         </Link>
 
         <div>
-          <h2 className="text-3xl font-bold">Allocate Budget</h2>
+          <h2 className="text-3xl font-bold">{isUpdate ? 'Update Budget' : 'Allocate Budget'}</h2>
           <p className="text-muted-foreground mt-2">{project.title}</p>
         </div>
 
-        <BudgetAllocationForm project={project} userId={user.id} />
+        <BudgetAllocationForm project={project} userId={user.id} isUpdate={isUpdate} />
       </div>
     </DashboardLayout>
   );
