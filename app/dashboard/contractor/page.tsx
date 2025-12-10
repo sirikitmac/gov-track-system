@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,8 @@ import {
   Building2,
   ArrowRight,
   Trophy,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,7 +28,12 @@ import Link from 'next/link';
  * DSA Concepts Used:
  * - Array filtering: O(n) to categorize projects by status
  * - Hash Map: O(1) for status badge color lookup
+ * - Infinite Scroll: Lazy loading pattern - O(k) per batch
+ * - Intersection Observer: Browser API for efficient scroll detection - O(1)
  */
+
+/** Number of items to load per batch for lazy loading */
+const ITEMS_PER_PAGE = 6;
 
 interface Project {
   id: string;
@@ -50,7 +56,10 @@ interface BidInvitation {
   bid_closing_date: string;
   pre_bid_conference_date: string;
   requirements: string;
-  projects: Project;
+}
+
+interface OpenProject extends Project {
+  bid_invitation?: BidInvitation | null;
 }
 
 interface Bid {
@@ -74,12 +83,139 @@ interface Contractor {
 export default function ContractorDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [contractor, setContractor] = useState<Contractor | null>(null);
-  const [openBidInvitations, setOpenBidInvitations] = useState<BidInvitation[]>([]);
+  const [openProjects, setOpenProjects] = useState<OpenProject[]>([]);
   const [myBids, setMyBids] = useState<Bid[]>([]);
   const [awardedProjects, setAwardedProjects] = useState<Project[]>([]);
   const [userProfile, setUserProfile] = useState<{ role: string } | null>(null);
 
+  // Lazy loading state for each tab
+  const [visibleOpenCount, setVisibleOpenCount] = useState(ITEMS_PER_PAGE);
+  const [visibleBidsCount, setVisibleBidsCount] = useState(ITEMS_PER_PAGE);
+  const [visibleAwardedCount, setVisibleAwardedCount] = useState(ITEMS_PER_PAGE);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [activeTab, setActiveTab] = useState('open-bids');
+
+  // Refs for intersection observers
+  const openLoadMoreRef = useRef<HTMLDivElement>(null);
+  const bidsLoadMoreRef = useRef<HTMLDivElement>(null);
+  const awardedLoadMoreRef = useRef<HTMLDivElement>(null);
+
   const supabase = createClient();
+
+  /**
+   * Visible items for lazy loading
+   * @description DSA: Array Slicing - O(k) where k = visible count
+   */
+  const visibleOpenProjects = useMemo(() => 
+    openProjects.slice(0, visibleOpenCount), 
+    [openProjects, visibleOpenCount]
+  );
+  
+  const visibleMyBids = useMemo(() => 
+    myBids.slice(0, visibleBidsCount), 
+    [myBids, visibleBidsCount]
+  );
+  
+  const visibleAwardedProjects = useMemo(() => 
+    awardedProjects.slice(0, visibleAwardedCount), 
+    [awardedProjects, visibleAwardedCount]
+  );
+
+  // Check if there are more items to load
+  const hasMoreOpen = visibleOpenCount < openProjects.length;
+  const hasMoreBids = visibleBidsCount < myBids.length;
+  const hasMoreAwarded = visibleAwardedCount < awardedProjects.length;
+
+  /**
+   * Load more callback for each tab
+   * @description DSA: Incremental Loading / Chunking
+   */
+  const loadMoreOpen = useCallback(() => {
+    if (loadingMore || !hasMoreOpen) return;
+    setLoadingMore(true);
+    setTimeout(() => {
+      setVisibleOpenCount(prev => Math.min(prev + ITEMS_PER_PAGE, openProjects.length));
+      setLoadingMore(false);
+    }, 300);
+  }, [loadingMore, hasMoreOpen, openProjects.length]);
+
+  const loadMoreBids = useCallback(() => {
+    if (loadingMore || !hasMoreBids) return;
+    setLoadingMore(true);
+    setTimeout(() => {
+      setVisibleBidsCount(prev => Math.min(prev + ITEMS_PER_PAGE, myBids.length));
+      setLoadingMore(false);
+    }, 300);
+  }, [loadingMore, hasMoreBids, myBids.length]);
+
+  const loadMoreAwarded = useCallback(() => {
+    if (loadingMore || !hasMoreAwarded) return;
+    setLoadingMore(true);
+    setTimeout(() => {
+      setVisibleAwardedCount(prev => Math.min(prev + ITEMS_PER_PAGE, awardedProjects.length));
+      setLoadingMore(false);
+    }, 300);
+  }, [loadingMore, hasMoreAwarded, awardedProjects.length]);
+
+  /**
+   * Intersection Observer for infinite scroll on Open Bids tab
+   */
+  useEffect(() => {
+    if (activeTab !== 'open-bids') return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreOpen && !loadingMore) {
+          loadMoreOpen();
+        }
+      },
+      { rootMargin: '100px', threshold: 0.1 }
+    );
+
+    const currentRef = openLoadMoreRef.current;
+    if (currentRef) observer.observe(currentRef);
+    return () => { if (currentRef) observer.unobserve(currentRef); };
+  }, [hasMoreOpen, loadingMore, loadMoreOpen, activeTab]);
+
+  /**
+   * Intersection Observer for My Bids tab
+   */
+  useEffect(() => {
+    if (activeTab !== 'my-bids') return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreBids && !loadingMore) {
+          loadMoreBids();
+        }
+      },
+      { rootMargin: '100px', threshold: 0.1 }
+    );
+
+    const currentRef = bidsLoadMoreRef.current;
+    if (currentRef) observer.observe(currentRef);
+    return () => { if (currentRef) observer.unobserve(currentRef); };
+  }, [hasMoreBids, loadingMore, loadMoreBids, activeTab]);
+
+  /**
+   * Intersection Observer for Awarded tab
+   */
+  useEffect(() => {
+    if (activeTab !== 'awarded') return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreAwarded && !loadingMore) {
+          loadMoreAwarded();
+        }
+      },
+      { rootMargin: '100px', threshold: 0.1 }
+    );
+
+    const currentRef = awardedLoadMoreRef.current;
+    if (currentRef) observer.observe(currentRef);
+    return () => { if (currentRef) observer.unobserve(currentRef); };
+  }, [hasMoreAwarded, loadingMore, loadMoreAwarded, activeTab]);
 
   useEffect(() => {
     fetchData();
@@ -87,7 +223,8 @@ export default function ContractorDashboardPage() {
 
   /**
    * Fetches all contractor-related data
-   * @description Uses parallel queries for efficiency - O(1) per query
+   * @description Fetches projects with Open_For_Bidding status directly,
+   * then enriches with bid_invitations data if available
    */
   const fetchData = async () => {
     try {
@@ -113,20 +250,37 @@ export default function ContractorDashboardPage() {
 
       setContractor(contractorData);
 
-      // Fetch open bid invitations (projects open for bidding)
+      // Fetch ALL projects that are Open for Bidding
+      const { data: openProjectsData, error: openError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('status', 'Open_For_Bidding')
+        .order('created_at', { ascending: false });
+
+      if (openError) {
+        console.error('Error fetching open projects:', openError);
+      }
+
+      // Fetch bid invitations to enrich the project data
       const { data: invitations } = await supabase
         .from('bid_invitations')
-        .select(`
-          *,
-          projects (
-            id, title, description, barangay, project_category,
-            estimated_cost, approved_budget_amount, status, created_at
-          )
-        `)
-        .gte('bid_closing_date', new Date().toISOString().split('T')[0])
-        .order('bid_closing_date', { ascending: true });
+        .select('*');
 
-      setOpenBidInvitations(invitations || []);
+      // Create a map of project_id -> bid_invitation for O(1) lookup
+      const invitationMap = new Map<string, BidInvitation>();
+      if (invitations) {
+        invitations.forEach((inv: BidInvitation) => {
+          invitationMap.set(inv.project_id, inv);
+        });
+      }
+
+      // Enrich open projects with bid invitation data
+      const enrichedProjects: OpenProject[] = (openProjectsData || []).map((project: Project) => ({
+        ...project,
+        bid_invitation: invitationMap.get(project.id) || null,
+      }));
+
+      setOpenProjects(enrichedProjects);
 
       // Fetch bids submitted by this contractor
       if (contractorData) {
@@ -304,11 +458,11 @@ export default function ContractorDashboardPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Open Invitations</CardTitle>
+              <CardTitle className="text-sm font-medium">Open Projects</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{openBidInvitations.length}</div>
+              <div className="text-2xl font-bold">{openProjects.length}</div>
               <p className="text-xs text-muted-foreground">Available for bidding</p>
             </CardContent>
           </Card>
@@ -347,11 +501,11 @@ export default function ContractorDashboardPage() {
         </div>
 
         {/* Main Content Tabs */}
-        <Tabs defaultValue="open-bids" className="space-y-4">
+        <Tabs defaultValue="open-bids" className="space-y-4" onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="open-bids">
               <FileText className="h-4 w-4 mr-2" />
-              Open for Bidding ({openBidInvitations.length})
+              Open for Bidding ({openProjects.length})
             </TabsTrigger>
             <TabsTrigger value="my-bids">
               <Gavel className="h-4 w-4 mr-2" />
@@ -363,74 +517,114 @@ export default function ContractorDashboardPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Open Bid Invitations Tab */}
+          {/* Open Projects Tab */}
           <TabsContent value="open-bids" className="space-y-4">
-            {openBidInvitations.length === 0 ? (
+            {openProjects.length === 0 ? (
               <Card>
                 <CardContent className="pt-6">
                   <p className="text-center text-muted-foreground">
-                    No open bid invitations at the moment. Check back later!
+                    No projects open for bidding at the moment. Check back later!
                   </p>
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4">
-                {openBidInvitations.map((invitation) => (
-                  <Card key={invitation.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{invitation.projects?.title}</CardTitle>
-                          <CardDescription>{invitation.projects?.barangay} • {invitation.projects?.project_category}</CardDescription>
+              <>
+                {/* Results count */}
+                <p className="text-sm text-muted-foreground">
+                  Showing {visibleOpenProjects.length} of {openProjects.length} projects
+                </p>
+                
+                <div className="grid gap-4">
+                  {visibleOpenProjects.map((project) => (
+                    <Card key={project.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{project.title}</CardTitle>
+                            <CardDescription>{project.barangay} • {project.project_category?.replace(/_/g, ' ')}</CardDescription>
+                          </div>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            Open for Bidding
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                          Open for Bidding
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                        {invitation.projects?.description}
-                      </p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-                        <div>
-                          <p className="text-muted-foreground">Approved Budget</p>
-                          <p className="font-medium text-green-600">
-                            {formatCurrency(invitation.projects?.approved_budget_amount || invitation.projects?.estimated_cost || 0)}
-                          </p>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                          {project.description}
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+                          <div>
+                            <p className="text-muted-foreground">Approved Budget</p>
+                            <p className="font-medium text-green-600">
+                              {formatCurrency(project.approved_budget_amount || project.estimated_cost || 0)}
+                            </p>
+                          </div>
+                          {project.bid_invitation ? (
+                            <>
+                              <div>
+                                <p className="text-muted-foreground">Bid Opening</p>
+                                <p className="font-medium">{formatDate(project.bid_invitation.bid_opening_date)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Bid Closing</p>
+                                <p className="font-medium text-red-600">{formatDate(project.bid_invitation.bid_closing_date)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Days Left</p>
+                                <p className="font-medium">
+                                  {Math.max(0, Math.ceil((new Date(project.bid_invitation.bid_closing_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div>
+                                <p className="text-muted-foreground">Estimated Cost</p>
+                                <p className="font-medium">{formatCurrency(project.estimated_cost || 0)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Category</p>
+                                <p className="font-medium">{project.project_category?.replace(/_/g, ' ')}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Status</p>
+                                <Badge variant="secondary">Awaiting Invitation</Badge>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Bid Opening</p>
-                          <p className="font-medium">{formatDate(invitation.bid_opening_date)}</p>
+                        {project.bid_invitation?.requirements && (
+                          <div className="mb-4">
+                            <p className="text-sm text-muted-foreground">Requirements:</p>
+                            <p className="text-sm">{project.bid_invitation.requirements}</p>
+                          </div>
+                        )}
+                        <div className="flex justify-end">
+                          <Link href={`/dashboard/contractor/submit-bid/${project.id}`}>
+                            <Button disabled={userProfile?.role === 'Contractor' && !contractor}>
+                              Submit Bid <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </Link>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Bid Closing</p>
-                          <p className="font-medium text-red-600">{formatDate(invitation.bid_closing_date)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Days Left</p>
-                          <p className="font-medium">
-                            {Math.max(0, Math.ceil((new Date(invitation.bid_closing_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days
-                          </p>
-                        </div>
-                      </div>
-                      {invitation.requirements && (
-                        <div className="mb-4">
-                          <p className="text-sm text-muted-foreground">Requirements:</p>
-                          <p className="text-sm">{invitation.requirements}</p>
-                        </div>
-                      )}
-                      <div className="flex justify-end">
-                        <Link href={`/dashboard/contractor/submit-bid/${invitation.project_id}`}>
-                          <Button disabled={userProfile?.role === 'Contractor' && !contractor}>
-                            Submit Bid <ArrowRight className="ml-2 h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Lazy Load Sentinel */}
+                <div ref={openLoadMoreRef} className="py-4 flex justify-center">
+                  {loadingMore && activeTab === 'open-bids' ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Loading more...</span>
+                    </div>
+                  ) : hasMoreOpen ? (
+                    <p className="text-sm text-muted-foreground">Scroll for more projects</p>
+                  ) : openProjects.length > ITEMS_PER_PAGE ? (
+                    <p className="text-sm text-muted-foreground">All {openProjects.length} projects loaded</p>
+                  ) : null}
+                </div>
+              </>
             )}
           </TabsContent>
 
@@ -445,43 +639,64 @@ export default function ContractorDashboardPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4">
-                {myBids.map((bid) => (
-                  <Card key={bid.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{bid.projects?.title}</CardTitle>
-                          <CardDescription>{bid.projects?.barangay} • {bid.projects?.project_category}</CardDescription>
+              <>
+                {/* Results count */}
+                <p className="text-sm text-muted-foreground">
+                  Showing {visibleMyBids.length} of {myBids.length} bids
+                </p>
+
+                <div className="grid gap-4">
+                  {visibleMyBids.map((bid) => (
+                    <Card key={bid.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{bid.projects?.title}</CardTitle>
+                            <CardDescription>{bid.projects?.barangay} • {bid.projects?.project_category}</CardDescription>
+                          </div>
+                          {getBidStatusBadge(bid)}
                         </div>
-                        {getBidStatusBadge(bid)}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Your Bid Amount</p>
-                          <p className="font-medium text-lg">{formatCurrency(bid.bid_amount)}</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Your Bid Amount</p>
+                            <p className="font-medium text-lg">{formatCurrency(bid.bid_amount)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Project Budget</p>
+                            <p className="font-medium">
+                              {formatCurrency(bid.projects?.approved_budget_amount || bid.projects?.estimated_cost || 0)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Submitted On</p>
+                            <p className="font-medium">{formatDate(bid.bid_date)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Project Status</p>
+                            <Badge variant="outline">{bid.projects?.status?.replace(/_/g, ' ')}</Badge>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Project Budget</p>
-                          <p className="font-medium">
-                            {formatCurrency(bid.projects?.approved_budget_amount || bid.projects?.estimated_cost || 0)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Submitted On</p>
-                          <p className="font-medium">{formatDate(bid.bid_date)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Project Status</p>
-                          <Badge variant="outline">{bid.projects?.status?.replace(/_/g, ' ')}</Badge>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Lazy Load Sentinel */}
+                <div ref={bidsLoadMoreRef} className="py-4 flex justify-center">
+                  {loadingMore && activeTab === 'my-bids' ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Loading more...</span>
+                    </div>
+                  ) : hasMoreBids ? (
+                    <p className="text-sm text-muted-foreground">Scroll for more bids</p>
+                  ) : myBids.length > ITEMS_PER_PAGE ? (
+                    <p className="text-sm text-muted-foreground">All {myBids.length} bids loaded</p>
+                  ) : null}
+                </div>
+              </>
             )}
           </TabsContent>
 
@@ -496,51 +711,72 @@ export default function ContractorDashboardPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4">
-                {awardedProjects.map((project) => (
-                  <Card key={project.id} className="hover:shadow-md transition-shadow border-green-200">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{project.title}</CardTitle>
-                          <CardDescription>{project.barangay} • {project.project_category}</CardDescription>
+              <>
+                {/* Results count */}
+                <p className="text-sm text-muted-foreground">
+                  Showing {visibleAwardedProjects.length} of {awardedProjects.length} awarded projects
+                </p>
+
+                <div className="grid gap-4">
+                  {visibleAwardedProjects.map((project) => (
+                    <Card key={project.id} className="hover:shadow-md transition-shadow border-green-200">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{project.title}</CardTitle>
+                            <CardDescription>{project.barangay} • {project.project_category}</CardDescription>
+                          </div>
+                          <Badge className="bg-green-500">
+                            <Trophy className="h-3 w-3 mr-1" /> Awarded
+                          </Badge>
                         </div>
-                        <Badge className="bg-green-500">
-                          <Trophy className="h-3 w-3 mr-1" /> Awarded
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                        {project.description}
-                      </p>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm mb-4">
-                        <div>
-                          <p className="text-muted-foreground">Contract Amount</p>
-                          <p className="font-medium text-lg text-green-600">
-                            {formatCurrency(project.approved_budget_amount || project.estimated_cost)}
-                          </p>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                          {project.description}
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm mb-4">
+                          <div>
+                            <p className="text-muted-foreground">Contract Amount</p>
+                            <p className="font-medium text-lg text-green-600">
+                              {formatCurrency(project.approved_budget_amount || project.estimated_cost)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Status</p>
+                            <Badge variant="outline">{project.status?.replace(/_/g, ' ')}</Badge>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Awarded Date</p>
+                            <p className="font-medium">{formatDate(project.created_at)}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Status</p>
-                          <Badge variant="outline">{project.status?.replace(/_/g, ' ')}</Badge>
+                        <div className="flex justify-end">
+                          <Link href={`/projects/${project.id}`}>
+                            <Button variant="outline">
+                              View Project <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </Link>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Awarded Date</p>
-                          <p className="font-medium">{formatDate(project.created_at)}</p>
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        <Link href={`/projects/${project.id}`}>
-                          <Button variant="outline">
-                            View Project <ArrowRight className="ml-2 h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Lazy Load Sentinel */}
+                <div ref={awardedLoadMoreRef} className="py-4 flex justify-center">
+                  {loadingMore && activeTab === 'awarded' ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Loading more...</span>
+                    </div>
+                  ) : hasMoreAwarded ? (
+                    <p className="text-sm text-muted-foreground">Scroll for more projects</p>
+                  ) : awardedProjects.length > ITEMS_PER_PAGE ? (
+                    <p className="text-sm text-muted-foreground">All {awardedProjects.length} projects loaded</p>
+                  ) : null}
+                </div>
+              </>
             )}
           </TabsContent>
         </Tabs>
