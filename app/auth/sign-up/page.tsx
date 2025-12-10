@@ -28,11 +28,19 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
+      /**
+       * Get the correct redirect URL based on environment
+       * In production (Vercel), use the NEXT_PUBLIC_SITE_URL or VERCEL_URL
+       * In development, fallback to window.location.origin (localhost)
+       */
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                      (typeof window !== 'undefined' ? window.location.origin : '');
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin,
+          emailRedirectTo: `${siteUrl}/auth/login`,
           data: {
             first_name: firstName,
             last_name: lastName,
